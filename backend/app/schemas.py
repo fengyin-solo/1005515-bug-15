@@ -64,6 +64,7 @@ class CombinerBoxEntry(BaseModel):
     field_5: str | None = None  # 通讯状态
     field_6: str | None = None  # 箱体温度
     field_7: str | None = None  # 运行状态
+    field_8: str | None = None  # 投运日期
 
 class TransformerEntry(BaseModel):
     """变压器明细结构。"""
