@@ -6,10 +6,19 @@
         <p class="page-desc">维护汇流箱，围绕汇流箱编号、所属阵列、输入路数、熔断器状态做登记、筛选与状态流转。</p>
       </div>
       <div class="page-actions">
-        <button class="btn primary" type="button" @click="openCreate">登记汇流箱</button>
+        <button class="btn primary" type="button" @click="toggleCreate">登记汇流箱</button>
         <button class="btn" type="button" @click="exportRows">导出汇流箱检测清单</button>
       </div>
     </header>
+
+    <form v-if="createVisible" class="filter-bar" @submit.prevent="submitCreate">
+      <label v-for="field in createFields" :key="field" class="filter-item">
+        <span>{{ field }}</span>
+        <input v-model="createForm[field]" :placeholder="`填写${field}`" />
+      </label>
+      <button class="btn primary" type="submit">提交登记</button>
+      <button class="btn ghost" type="button" @click="toggleCreate">取消</button>
+    </form>
 
     <div class="stat-row">
       <article v-for="item in stats" :key="item.label" class="stat-card">
@@ -70,16 +79,19 @@ import { request } from '@/api/client'
 type Row = Record<string, string | number | null>
 
 const ENDPOINT = '/api/combiner_box'
-const columns = ["汇流箱编号", "所属阵列", "输入路数", "熔断器状态", "防雷模块状态", "通讯状态", "箱体温度", "运行状态"]
-const actions = ["恢复正常", "标记异常", "停用设备"]
+const columns = ["汇流箱编号", "所属阵列", "输入路数", "熔断器状态", "防雷模块状态", "通讯状态", "箱体温度", "投运日期", "运行状态"]
+const actions = ["恢复正常", "标记异常", "标记中断", "停用设备"]
 const statuses = ["运行正常", "熔断器异常", "通讯中断", "已停用"]
 const stats = [{"label": "正常运行数", "value": 0}, {"label": "异常汇流箱", "value": 0}, {"label": "停用设备数", "value": 0}]
+const createFields = columns.slice(0, 8)
 
 const rows = ref<Row[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+const createVisible = ref(false)
+const createForm = ref<Record<string, string>>({})
 
 function resetFilters() {
   filters.value = {}
@@ -90,8 +102,29 @@ function exportRows() {
   window.open(`${ENDPOINT}/export`, '_blank')
 }
 
-function openCreate() {
-  errorMessage.value = '汇流箱登记入口尚未接入审批流'
+function toggleCreate() {
+  createVisible.value = !createVisible.value
+  createForm.value = {}
+  errorMessage.value = ''
+}
+
+async function submitCreate() {
+  errorMessage.value = ''
+  try {
+    const response = await request(ENDPOINT, {
+      method: 'POST',
+      body: JSON.stringify({ values: createForm.value }),
+    })
+    const payload = await response.json()
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message ?? payload.detail ?? '汇流箱登记被打回')
+    }
+    createVisible.value = false
+    createForm.value = {}
+    await reload()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '汇流箱登记失败'
+  }
 }
 
 async function runAction(action: string, row: Row) {
@@ -99,10 +132,11 @@ async function runAction(action: string, row: Row) {
   try {
     const response = await request(`${ENDPOINT}/${row.id}/actions`, {
       method: 'POST',
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ values: { action } }),
     })
-    if (!response.ok) {
-      throw new Error('汇流箱检测动作未生效，请稍后重试')
+    const payload = await response.json()
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message ?? payload.detail ?? '汇流箱检测动作未生效')
     }
     await reload()
   } catch (error) {

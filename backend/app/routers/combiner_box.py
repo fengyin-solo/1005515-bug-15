@@ -1,4 +1,4 @@
-"""汇流箱检测接口：维护汇流箱，覆盖恢复正常、标记异常、停用设备等动作。"""
+"""汇流箱检测接口：维护汇流箱，覆盖恢复正常、标记异常、标记中断、停用设备等动作。"""
 from __future__ import annotations
 
 from typing import Any
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/combiner_box", tags=["汇流箱检测"])
 
 service = CombinerBoxService()
 
-LIST_FIELDS = ["汇流箱编号", "所属阵列", "输入路数", "熔断器状态", "防雷模块状态", "通讯状态", "箱体温度", "运行状态"]
+LIST_FIELDS = ["汇流箱编号", "所属阵列", "输入路数", "熔断器状态", "防雷模块状态", "通讯状态", "箱体温度", "投运日期", "运行状态"]
 STATUSES = ["运行正常", "熔断器异常", "通讯中断", "已停用"]
 
 
@@ -41,16 +41,16 @@ def get_entry(entry_id: int) -> dict:
 
 @router.post("", response_model=ActionResult)
 def create_entry(payload: EntryPayload) -> ActionResult:
-    """登记一条汇流箱，缺字段时说明原因而不是静默丢弃。"""
-    entry, missing = service.create_entry(payload.values)
-    if missing:
-        return ActionResult(ok=False, message=f"缺少必填字段：{'、'.join(missing)}")
+    """登记一条汇流箱，缺字段或重复编号时说明原因打回，不静默丢弃。"""
+    entry, reasons = service.create_entry(payload.values)
+    if reasons:
+        return ActionResult(ok=False, message="；".join(reasons))
     return ActionResult(ok=True, message="汇流箱已登记", entry=entry)
 
 
 @router.post("/{entry_id}/actions", response_model=ActionResult)
 def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
-    """对单条汇流箱执行恢复正常、标记异常、停用设备；不允许的动作会被拦下并说明原因。"""
+    """对单条汇流箱执行恢复正常、标记异常、标记中断、停用设备；越级的状态跳转会被拦下并说明原因。"""
     action = str(payload.values.get("action") or "").strip()
     entry, message = service.run_action(entry_id, action)
     if entry is None:
